@@ -37,12 +37,6 @@ static struct thread *initial_thread;
 /* Lock used by allocate_tid(). */
 static struct lock tid_lock;
 
-/* Lock used when printing threads information */
-static struct lock report_lock;
-
-/* Semaphore used by thread_create_report. */
-static struct semaphore report_sema;
-
 /* Stack frame for kernel_thread(). */
 struct kernel_thread_frame 
   {
@@ -82,8 +76,7 @@ static tid_t allocate_tid (void);
    general and it is possible in this case only because loader.S
    was careful to put the bottom of the stack at a page boundary.
 
-   Also initializes the run queue, the tid lock, and the 
-   report_lock.
+   Also initializes the run queue and the tid lock.
 
    After calling this function, be sure to initialize the page
    allocator before trying to create any threads with
@@ -96,7 +89,6 @@ thread_init (void)
 {
   ASSERT (intr_get_level () == INTR_OFF);
 
-  lock_init (&report_lock);
   lock_init (&tid_lock);
   list_init (&ready_list);
   list_init (&all_list);
@@ -211,8 +203,7 @@ thread_create (const char *name, int priority,
 
   return tid;
 }
-/* A version of thread_create that also prints out the number of 
-   running threads and the name of the lowest priority thread. */
+
 tid_t
 thread_create_report (const char *name, int priority,
                thread_func *function, void *aux) 
@@ -221,6 +212,7 @@ thread_create_report (const char *name, int priority,
   struct kernel_thread_frame *kf;
   struct switch_entry_frame *ef;
   struct switch_threads_frame *sf;
+  struct thread *temp;
   tid_t tid;
 
   ASSERT (function != NULL);
@@ -230,12 +222,6 @@ thread_create_report (const char *name, int priority,
   if (t == NULL)
     return TID_ERROR;
 
-  /* Prints out info pertaining to all threads in the system. Lock 
-     is necessary to ensure that all reports are printed in order. */
-  lock_acquire (&report_lock);
-  threads_report ();
-  lock_release (&report_lock);
-  
   /* Initialize thread. */
   init_thread (t, name, priority);
   tid = t->tid = allocate_tid ();
@@ -255,41 +241,44 @@ thread_create_report (const char *name, int priority,
   sf->eip = switch_entry;
   sf->ebp = 0;
 
+  int old_level = intr_disable ();
+
+  /* Init thread count to 1 since loop starts at next elem. */
+  int num_threads = 1;
+
+  /* Init min */
+  struct list_elem *min = list_begin (&all_list);
+  struct thread *min_thread = list_entry (min, struct thread, allelem);
+
+  /* Make sure idle was not first element */
+  if ((min_thread == idle_thread) && (min != list_end (&all_list))){
+    min = list_next(min);
+    min_thread = list_entry (min, struct thread, allelem);
+  }
+
+  /* Loop to find min */
+  struct list_elem *e;
+  for (e = list_next (min); e != list_end (&all_list); e = list_next (e)){
+    temp = list_entry (e, struct thread, allelem);
+    if (temp != idle_thread){
+      num_threads ++;
+      if (temp->priority < min_thread->priority){
+        min_thread = temp;
+      }
+    }
+  }
+
+  intr_set_level (old_level);
+
+  /* Output results */
+  char *min_name = min_thread->name;
+  printf("number of threads: %d\n", num_threads);
+  printf("thread with lowest priority: %s\n", min_name);
+
   /* Add to run queue. */
   thread_unblock (t);
 
   return tid;
-}
-
-/* Used by the create_thread_report() function to print out data 
-   regarding the processes that are currently running. 
-   
-   Disabling interrupts for a short time is necessary because we
-   need access to the all_list which can be manipulated by 
-   interrupt handlers. */
-void threads_report(){
-  struct list_elem *e;
-  struct thread *t;
-  enum intr_level old_level;
-  int thread_count;
-  int lowest_priority_value;
-  char* lowest_priority_name;
-
-  lowest_priority_value = 63;
-  thread_count = 1;
-  old_level = intr_disable ();
-  for (e = list_begin (&all_list); e != list_end (&all_list);
-       e = list_next (e))
-    {
-      thread_count += 1;
-      if (t = list_entry (e, struct thread, allelem)->priority < lowest_priority_value){
-        lowest_priority_name = t->name;
-        lowest_priority_value = t->priority;
-      }
-    }  
-  intr_set_level (old_level);
-  printf("number of threads: %d", thread_count);
-  printf("lowest priority: %s", lowest_priority_name);
 }
 
 /* Puts the current thread to sleep.  It will not be scheduled
@@ -320,14 +309,23 @@ void
 thread_unblock (struct thread *t) 
 {
   enum intr_level old_level;
+  struct list_elem *current = list_head(&ready_list);
 
   ASSERT (is_thread (t));
 
   old_level = intr_disable ();
   ASSERT (t->status == THREAD_BLOCKED);
-  list_push_back (&ready_list, &t->elem);
+  //list_push_back (&ready_list, &t->elem);
+  while (list_entry(current, struct thread, allelem)->priority >= t->priority){
+    current = current->next;
+  }
+  list_insert(current, &(t->allelem));
   t->status = THREAD_READY;
   intr_set_level (old_level);
+  
+  if (t->priority > thread_get_priority ()){
+    thread_yield ();
+  }
 }
 
 /* Returns the name of the running thread. */
@@ -424,6 +422,10 @@ void
 thread_set_priority (int new_priority) 
 {
   thread_current ()->priority = new_priority;
+  if (next_thread_to_run ()->priority > new_priority)
+  {
+    thread_yield ();
+  }
 }
 
 /* Returns the current thread's priority. */

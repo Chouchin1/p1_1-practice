@@ -1,18 +1,36 @@
 # -*- makefile -*-
 
 # Test names.
-tests/threads_TESTS = $(addprefix tests/threads/,alarm-single		\
-alarm-multiple alarm-simultaneous alarm-priority alarm-zero		\
-alarm-negative priority-change priority-donate-one			\
-priority-donate-multiple priority-donate-multiple2			\
-priority-donate-nest priority-donate-sema priority-donate-lower		\
-priority-fifo priority-preempt priority-sema priority-condvar		\
-priority-donate-chain                                                   \
-mlfqs-load-1 mlfqs-load-60 mlfqs-load-avg mlfqs-recent-1 mlfqs-fair-2	\
-mlfqs-fair-20 mlfqs-nice-2 mlfqs-nice-10 mlfqs-block)
+
+# choose between 1/2/3 for PA1_1, PA1_2, PA1_3
+TEST_LEVEL = 1
+
+# PA1_1 tests
+ifeq ($(TEST_LEVEL), 1)
+	tests/threads_TESTS = $(addprefix tests/threads/,pa1_1-starter)
+endif
+
+# PA1_2 tests
+ifeq ($(TEST_LEVEL), 2)
+	tests/threads_TESTS += $(addprefix tests/threads/,alarm-single		\
+	alarm-multiple alarm-simultaneous alarm-priority alarm-zero		\
+	alarm-negative priority-change priority-fifo priority-preempt)
+endif
+
+# PA1_3 tests
+ifeq ($(TEST_LEVEL), 3)
+	tests/threads_TESTS += $(addprefix tests/threads/,alarm-single          \
+        alarm-multiple alarm-simultaneous alarm-priority alarm-zero             \
+        alarm-negative priority-change priority-fifo priority-preempt		\
+	priority-donate-one priority-donate-multiple priority-donate-multiple2  \
+	priority-donate-nest priority-donate-sema priority-donate-lower        \
+	priority-sema priority-condvar priority-donate-chain)
+endif
+
 
 # Sources for tests.
 tests/threads_SRC  = tests/threads/tests.c
+tests/threads_SRC += tests/threads/pa1_1-starter.c
 tests/threads_SRC += tests/threads/alarm-wait.c
 tests/threads_SRC += tests/threads/alarm-simultaneous.c
 tests/threads_SRC += tests/threads/alarm-priority.c
